@@ -1,0 +1,4 @@
+# Fins de ligne Unix (LF) même si le dépôt est modifié sous Windows :
+# un script en CRLF échoue sous Linux (« $'\r': command not found »).
+* text=auto eol=lf
+*.pub text eol=lf
