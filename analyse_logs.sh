@@ -1,29 +1,4 @@
 #!/bin/bash
-#
-# analyse_logs.sh — Projet XTI302-CYB, exigence J4
-#
-# Rapport des connexions SSH lu dans le journal systemd :
-#   - nombre d'échecs par adresse IP,
-#   - comptes visés par ces échecs,
-#   - connexions réussies,
-# puis code de sortie exploitable par un autre programme :
-#   0 : aucune adresse IP n'a atteint le seuil d'alerte
-#   1 : ALERTE, au moins une adresse IP a atteint le seuil
-#   2 : erreur (option invalide, pas root, journal illisible)
-#
-# Usage : sudo analyse_logs.sh [-s SEUIL] [-p PERIODE] [-h]
-#   -s SEUIL    échecs d'une même IP qui déclenchent l'alerte (défaut : 10)
-#   -p PERIODE  période analysée : <n>h, <n>d, today ou yesterday (défaut : 24h)
-#
-# Où sont les journaux SSH ? Une Debian 13 minimale n'a pas rsyslog, donc
-# pas de /var/log/auth.log : tout est dans le journal systemd. On filtre sur
-# le nom du processus (_COMM) : « sshd » (le service qui écoute) et
-# « sshd-session » / « sshd-auth » (OpenSSH 10 de Debian 13), qui écrivent
-# les messages d'authentification.
-#
-# Le compte support lance ce script en root via sudo. Il appartient donc à
-# root et n'est modifiable que par lui (/usr/local/sbin, 0755) ; ses
-# arguments sont strictement validés et le PATH est fixé.
 
 set -euo pipefail
 export PATH=/usr/sbin:/usr/bin:/sbin:/bin
@@ -65,7 +40,6 @@ lire_options() {
     [[ $# -eq 0 ]] || erreur "argument inattendu : $1"
 }
 
-# Traduit la période en date de début compréhensible par journalctl
 date_de_debut() {
     case $PERIODE in
         today | yesterday) echo "$PERIODE" ;;
@@ -79,13 +53,6 @@ lire_journal() {
         _COMM=sshd _COMM=sshd-session _COMM=sshd-auth
 }
 
-# Transforme chaque ligne utile du journal en un « événement » normalisé :
-#   SUCCES <date> <compte> <ip> <méthode>
-#   ECHEC  <ip> <compte>
-# Format d'une ligne (short-iso) :
-#   2026-11-05T19:12:03+01:00 srv-xti sshd-session[1234]: <message>
-# Après chaque substitution réussie, « t » passe à la ligne suivante : une
-# ligne ne produit donc qu'un seul événement.
 extraire_evenements() {
     sed -nE \
         -e 's/^([^ ]+) [^ ]+ [^ ]+ Accepted ([^ ]+) for ([^ ]+) from ([0-9A-Fa-f:.]+) port .*/SUCCES \1 \3 \4 \2/p' -e t \
@@ -97,13 +64,10 @@ extraire_evenements() {
         -e 's/^[^ ]+ [^ ]+ [^ ]+ (Connection closed by|Disconnected from) authenticating user ([^ ]+) ([0-9A-Fa-f:.]+) port .*/ECHEC \3 \2/p' -e t
 }
 
-# Les tentatives depuis la machine elle-même (127.0.0.1, ::1), par exemple
-# celles de verifier.sh, ne sont pas des attaques : on les écarte des échecs.
 ecarter_boucle_locale() {
     awk '$1 == "ECHEC" && ($2 ~ /^127\./ || $2 == "::1") {next} {print}'
 }
 
-# Affiche « (aucun) » si une section du rapport est vide
 afficher_section() {
     local titre=$1 contenu=$2
     echo "== $titre =="
@@ -121,7 +85,6 @@ main() {
 
     local journal evenements total par_ip comptes succes alertes
     journalctl --quiet -n 1 >/dev/null 2>&1 || erreur "impossible de lire le journal systemd"
-    # « || true » : une période sans aucune ligne SSH n'est pas une erreur
     journal=$(lire_journal 2>/dev/null) || true
     evenements=$(extraire_evenements <<< "$journal" | ecarter_boucle_locale)
 
