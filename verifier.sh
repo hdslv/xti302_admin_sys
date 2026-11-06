@@ -1,37 +1,6 @@
 #!/bin/bash
-#
-# verifier.sh — Projet XTI302-CYB « Durcir un serveur Linux et le prouver »
-# Contexte B : cabinet comptable Chiffres & Co
-#
-# Teste automatiquement chaque exigence du cahier des charges et affiche un
-# résultat par test :
-#     [OK] S2  connexion root refusée
-#     [KO] J2  politique par défaut du pare-feu : accept (attendu : drop)
-#     --- 27 / 28 tests réussis
-#
-# Usage  : sudo ./verifier.sh        (depuis la racine du dépôt)
-# Sortie : 0 si tout est conforme, 1 si au moins un test échoue,
-#          2 en cas d'erreur d'utilisation (pas root, option inconnue).
-#
-# Ce script ne modifie JAMAIS le système : il ne crée que des fichiers de test
-# temporaires, supprimés à la fin (fonction nettoyer, appelée par trap EXIT).
-#
-# Pourquoi seulement « set -u » et pas « set -euo pipefail » ?
-#   -e       : ce script lance EXPRÈS des commandes qui doivent échouer (ex.
-#              « un stagiaire ne peut pas lister depot ») ; avec -e, le premier
-#              refus arrêterait toute la vérification.
-#   pipefail : dans « commande | grep -q motif », grep s'arrête à la première
-#              ligne trouvée ; la commande reçoit SIGPIPE et, avec pipefail, le
-#              pipeline serait faux alors que le motif est bien présent.
-#   -u       : conservé : une faute de frappe dans un nom de variable est une
-#              erreur et non une chaîne vide silencieuse.
-#
-# Pour tester un droit à la place d'un utilisateur, on utilise runuser (le
-# « sudo -u » de root) : il ne dépend pas de la configuration sudo, que le
-# jury peut justement avoir modifiée.
 set -u
 
-# Messages des commandes en anglais (stables pour les comparaisons), PATH sûr
 export LC_ALL=C
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
@@ -56,8 +25,6 @@ readonly SAUVEGARDES=/sauvegardes
 readonly VERSIONS=$SAUVEGARDES/versions
 readonly ETIQUETTE_DISQUE=SAUVEGARDES
 
-# C2 : tableau du contexte B, une ligne par case : répertoire|groupe|droit
-#   rw = lecture/écriture   r = lecture   - = aucun accès   depot = dépôt seul
 readonly DROITS_ATTENDUS=(
     "/srv/dossiers_clients|comptables|rw"
     "/srv/dossiers_clients|rh|-"
@@ -93,16 +60,12 @@ else
     VERT="" ROUGE="" GRIS="" GRAS="" NORMAL=""
 fi
 
-# ---------------------------------------------------------------------------
-# Outils
-# ---------------------------------------------------------------------------
 
 ok()    { NB_OK=$((NB_OK + 1)); printf '%s[OK]%s %-3s %s\n' "$VERT" "$NORMAL" "$1" "$2"; }
 ko()    { NB_KO=$((NB_KO + 1)); printf '%s[KO]%s %-3s %s\n' "$ROUGE" "$NORMAL" "$1" "$2"; }
-note()  { printf '%s[--]%s %-3s %s\n' "$GRIS" "$NORMAL" "$1" "$2"; }   # information, non comptée
+note()  { printf '%s[--]%s %-3s %s\n' "$GRIS" "$NORMAL" "$1" "$2"; }
 titre() { printf '\n%s%s%s\n' "$GRAS" "$*" "$NORMAL"; }
 
-# controle ID "message si OK" "message si KO" commande [arguments...]
 controle() {
     local id=$1 message_ok=$2 message_ko=$3
     shift 3
@@ -116,14 +79,11 @@ nettoyer() {
     done
 }
 
-# en_tant_que COMPTE commande... : lance la commande avec l'identité du compte
 en_tant_que() { runuser -u "$1" -- "${@:2}" >/dev/null 2>&1; }
-# peut COMPTE -r|-w|-x CHEMIN : test d'accès réel (respecte les ACL)
 peut() { runuser -u "$1" -- test "$2" "$3" 2>/dev/null; }
 
 identique() { [[ -f $1 && -f $2 ]] && cmp -s "$1" "$2"; }
 
-# Fichier appartenant à root et non modifiable par le groupe ni les autres
 protege() {
     [[ -f $1 ]] || return 1
     [[ $(stat -c %U "$1") == root ]] || return 1
@@ -132,16 +92,13 @@ protege() {
 
 droits_autres() { echo $(( 8#$(stat -c %a "$1") & 7 )); }
 
-# Comptes humains (UID 1000 à 59999)
 comptes_humains() { awk -F: '$3 >= 1000 && $3 < 60000 {print $1}' /etc/passwd; }
 
-# Groupe principal ou secondaire, d'après comptes.csv
 dans_groupe_csv() {
     local login=$1 groupe=$2
     [[ ${PRIMAIRE[$login]} == "$groupe" || ",${SECONDAIRES[$login]}," == *",$groupe,"* ]]
 }
 
-# membre GROUPE [RANG] : le RANG-ième compte du groupe dans comptes.csv
 membre() {
     local groupe=$1 rang=${2:-1} login n=0
     for login in "${LOGINS[@]}"; do
@@ -160,12 +117,10 @@ membres() {
     done
 }
 
-# Valeur effective d'une option sshd (sshd -T affiche les noms en minuscules)
 valeur_sshd() {
     awk -v cle="$1" '$1 == cle { $1 = ""; sub(/^ /, ""); print; exit }' <<< "$SSHD_T"
 }
 
-# Tentative de connexion SSH locale par mot de passe, sans clé ni saisie
 ssh_par_mot_de_passe() {
     timeout 15 ssh -o BatchMode=yes -o ConnectTimeout=5 \
         -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR \
@@ -203,9 +158,6 @@ nombre_versions() {
     find "$VERSIONS" -mindepth 1 -maxdepth 1 -type d -name '[0-9]*-[0-9]*_[0-9]*' 2>/dev/null | wc -l
 }
 
-# ---------------------------------------------------------------------------
-# C1 à C4 : comptes et droits
-# ---------------------------------------------------------------------------
 
 test_C1_csv() {
     if lire_csv; then
@@ -331,7 +283,6 @@ test_C2_droits() {
     done
 }
 
-# Un fichier créé PLUS TARD doit hériter des bons droits (ACL par défaut)
 heritage() {
     local rep=$1 groupe_auteur=$2
     local auteur fichier entree rep2 groupe droit compte r w erreurs=""
@@ -345,7 +296,6 @@ heritage() {
     for entree in "${DROITS_ATTENDUS[@]}"; do
         IFS='|' read -r rep2 groupe droit <<< "$entree"
         [[ $rep2 == "$rep" ]] || continue
-        # 2e membre du groupe : différent de l'auteur pour son propre groupe
         compte=$(membre "$groupe" 2) || compte=$(membre "$groupe" 1)
         peut "$compte" -r "$fichier"; r=$?
         peut "$compte" -w "$fichier"; w=$?
@@ -493,9 +443,6 @@ test_C4_lecture() {
     fi
 }
 
-# ---------------------------------------------------------------------------
-# S1 à S5 : accès SSH
-# ---------------------------------------------------------------------------
 
 test_S1() {
     if [[ $(valeur_sshd passwordauthentication) == no \
@@ -589,9 +536,6 @@ test_S5() {
                 grep -Eq '^[[:space:]]*Include[[:space:]]+/etc/ssh/sshd_config.d/\*\.conf' /etc/ssh/sshd_config
 }
 
-# ---------------------------------------------------------------------------
-# J1 à J4 : journaux et défense
-# ---------------------------------------------------------------------------
 
 test_J1() {
     if systemctl is-active --quiet fail2ban && systemctl is-enabled --quiet fail2ban \
@@ -711,9 +655,6 @@ test_J4() {
     fi
 }
 
-# ---------------------------------------------------------------------------
-# B1 à B4 : sauvegarde
-# ---------------------------------------------------------------------------
 
 test_B1_disque() {
     if mountpoint -q "$SAUVEGARDES" \
@@ -805,7 +746,6 @@ test_B4() {
     fi
     temporaire=$(mktemp -d /tmp/verifier_restauration.XXXXXX)
     A_SUPPRIMER+=("$temporaire")
-    # Même procédure que dans DOSSIER.md, mais vers un répertoire temporaire
     if rsync -aAX "$VERSIONS/$derniere/srv/commun/" "$temporaire/commun/" \
        && diff -r "$VERSIONS/$derniere/srv/commun" "$temporaire/commun" >/dev/null \
        && diff <(cd "$VERSIONS/$derniere/srv/commun" && getfacl -R -p . 2>/dev/null) \
@@ -819,9 +759,6 @@ test_B4() {
                 grep -qi 'restauration' "$REP/DOSSIER.md"
 }
 
-# ---------------------------------------------------------------------------
-# D1 à D3 : système
-# ---------------------------------------------------------------------------
 
 test_D1() {
     local configuration
@@ -846,14 +783,12 @@ test_D2() {
     while read -r netid etat rq sq locale distante processus; do
         port=${locale##*:}
         adresse=${locale%:*}
-        adresse=${adresse%%%*}            # retire « %interface »
-        adresse=${adresse#\[}; adresse=${adresse%\]}   # retire les crochets IPv6
+        adresse=${adresse%%%*}
+        adresse=${adresse#\[}; adresse=${adresse%\]}
         nom=$(sed -n 's/.*(("\([^"]*\)".*/\1/p' <<< "${processus:-}")
-        # Écoute limitée à la machine elle-même : pas joignable depuis le réseau
         [[ $adresse == 127.* || $adresse == ::1 || $adresse == localhost ]] && continue
         vus+=" $netid/$port($nom)"
         if [[ $netid == tcp && $port == 22 && $nom == sshd ]]; then continue; fi
-        # Client DHCP (IPv4 port 68, IPv6 port 546) : expliqué dans le dossier
         if [[ $netid == udp && ( $port == 68 || $port == 546 ) && $nom =~ ^(dhclient|dhcpcd|systemd-network)$ ]]; then continue; fi
         inattendus+=" $netid/$port($nom)"
     done < <(ss -Htulpn 2>/dev/null)
@@ -868,9 +803,6 @@ test_D3() {
     local -a racines=(/)
     mountpoint -q "$SAUVEGARDES" && racines+=("$SAUVEGARDES")
     local modifiables
-    # -xdev : ne pas descendre dans /proc, /sys, /dev, /run (systèmes de
-    # fichiers virtuels). -type f / -type d : les liens symboliques (toujours
-    # en 777) ne sont pas comptés.
     modifiables=$(find "${racines[@]}" -xdev \
                     \( -path /tmp -o -path /var/tmp -o -path /dev/shm \) -prune -o \
                     \( -type f -perm -0002 -print \) -o \
@@ -890,7 +822,6 @@ test_D3() {
     fi
 }
 
-# ---------------------------------------------------------------------------
 
 usage() {
     echo "Usage : sudo $0     (vérifie toutes les exigences, ne modifie rien)"

@@ -1,8 +1,3 @@
-# Projet XTI302-CYB — exigence D3 : fichiers SUID attendus
-# verifier.sh compare la liste réelle (find / -xdev -type f -perm -4000)
-# à ce fichier. Tout SUID absent d'ici est signalé [KO].
-# Chaque entrée est expliquée dans DOSSIER.md (section D3).
-# À AJUSTER après un premier « find / -xdev -type f -perm -4000 » sur la VM.
 /usr/bin/chfn
 /usr/bin/chsh
 /usr/bin/gpasswd

@@ -1,12 +1,8 @@
-# Projet XTI302-CYB — exigence B2 : planification de la sauvegarde
-# Copié par installer.sh dans /etc/systemd/system/sauvegarde.timer
 [Unit]
 Description=Sauvegarde quotidienne de /srv et /etc
 
 [Timer]
-# Tous les jours à 2 h, hors des heures de travail du cabinet
 OnCalendar=*-*-* 02:00:00
-# Si la machine était éteinte à 2 h, la sauvegarde est lancée au démarrage
 Persistent=true
 RandomizedDelaySec=15min
 

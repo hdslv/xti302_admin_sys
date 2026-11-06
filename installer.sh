@@ -1,19 +1,4 @@
 #!/bin/bash
-#
-# installer.sh — Projet XTI302-CYB, contexte B (cabinet Chiffres & Co)
-#
-# Reconstruit TOUTE la configuration sur la VM vierge (snapshot « vierge ») :
-# paquets, comptes et droits, sudo, SSH, pare-feu, fail2ban, journal,
-# mises à jour automatiques, disque et planification des sauvegardes.
-# Le script peut être relancé sans danger (idempotent) : en particulier, il ne
-# formate JAMAIS un disque qui contient déjà quelque chose.
-#
-# Usage  : sudo ./installer.sh [--forcer-ssh] [-h]
-#   --forcer-ssh  applique le durcissement SSH même si aucun administrateur
-#                 n'a de clé installée (risque de perdre l'accès SSH)
-# Sortie : 0 succès ; 1 erreur.
-#
-# Variable facultative : DISQUE_SAUVEGARDE (défaut /dev/sdb)
 
 set -euo pipefail
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
@@ -37,13 +22,11 @@ usage() {
     sed -n '3,18p' "$0" | sed 's/^# \{0,1\}//'
 }
 
-# Copie un fichier de config/ en lui donnant root comme propriétaire
 copier() {
     local source=$1 destination=$2 mode=$3
     install -D -o root -g root -m "$mode" "$CONFIG/$source" "$destination"
 }
 
-# Membres d'un groupe : groupe secondaire OU groupe principal
 membres_groupe() {
     local groupe=$1 gid
     gid=$(getent group "$groupe" | cut -d: -f3)
@@ -60,8 +43,6 @@ verifier_prerequis() {
     if ! grep -q '^13' /etc/debian_version 2>/dev/null; then
         alerte "ce projet est prévu pour Debian 13 (version trouvée : $(cat /etc/debian_version 2>/dev/null))"
     fi
-    # Les scripts lancés par root doivent appartenir à root et n'être
-    # modifiables que par lui.
     if [[ $(stat -c %U "$REP") != root ]] || find "$REP" -perm /022 -type f -name '*.sh' | grep -q .; then
         alerte "le dépôt $REP devrait appartenir à root, sans écriture pour le groupe ni les autres"
         alerte "  correction : chown -R root:root $REP && chmod -R go-w $REP"
@@ -79,7 +60,6 @@ configurer_comptes() {
     etape "C1, C2, C4 : comptes, groupes, répertoires /srv et clés SSH"
     "$REP/creer_comptes.sh" "$REP/comptes.csv"
 
-    # C4 : les futurs répertoires personnels seront aussi en 0700
     if grep -qE '^[#[:space:]]*HOME_MODE' /etc/login.defs; then
         sed -i -E 's/^[#[:space:]]*HOME_MODE.*/HOME_MODE\t0700/' /etc/login.defs
     else
@@ -97,9 +77,6 @@ configurer_sudo() {
     copier sudoers.d/projet /etc/sudoers.d/projet 0440
     visudo -c >/dev/null || erreur "configuration sudo invalide après copie"
 
-    # Une Debian fraîche a souvent un compte dans le groupe « sudo » (créé si
-    # aucun mot de passe root n'a été saisi à l'installation) : on le vide,
-    # seuls admins et support (fichier ci-dessus) gardent sudo.
     local compte
     for compte in $(getent group sudo | cut -d: -f4 | tr ',' ' '); do
         gpasswd -d "$compte" sudo >/dev/null
@@ -113,9 +90,6 @@ installer_scripts() {
     install -o root -g root -m 0755 "$REP/sauvegarde.sh" /usr/local/sbin/sauvegarde.sh
 }
 
-# B1 : prépare le second disque UNE SEULE FOIS. S'il porte déjà un système de
-# fichiers « SAUVEGARDES », on ne touche à rien : les sauvegardes existantes
-# survivent à une nouvelle exécution d'installer.sh.
 preparer_disque() {
     etape "B1 : disque de sauvegarde"
     local partition
@@ -125,7 +99,6 @@ preparer_disque() {
     else
         [[ -b $DISQUE_SAUVEGARDE ]] \
             || erreur "disque $DISQUE_SAUVEGARDE introuvable : ajoutez un second disque à la VM"
-        # Garde-fous : jamais le disque système, jamais un disque non vierge
         if lsblk -nro MOUNTPOINT "$DISQUE_SAUVEGARDE" | grep -q .; then
             erreur "$DISQUE_SAUVEGARDE contient une partition montée : refus de formater"
         fi
@@ -143,9 +116,6 @@ preparer_disque() {
     fi
 
     mkdir -p "$POINT_MONTAGE"
-    # Montage permanent, par étiquette. nofail : la VM démarre même sans ce
-    # disque ; nodev,nosuid,noexec : rien ne peut être exécuté depuis les
-    # sauvegardes.
     if ! grep -qE "^LABEL=$ETIQUETTE[[:space:]]" /etc/fstab; then
         echo "LABEL=$ETIQUETTE $POINT_MONTAGE ext4 defaults,nodev,nosuid,noexec,nofail 0 2" >> /etc/fstab
         systemctl daemon-reload
@@ -153,7 +123,6 @@ preparer_disque() {
     fi
     mountpoint -q "$POINT_MONTAGE" || mount "$POINT_MONTAGE"
 
-    # B3 : accessible uniquement aux administrateurs
     chown root:admins "$POINT_MONTAGE"
     chmod 0750 "$POINT_MONTAGE"
 }
@@ -164,8 +133,6 @@ configurer_sauvegarde() {
     copier systemd/sauvegarde.timer /etc/systemd/system/sauvegarde.timer 0644
     systemctl daemon-reload
     systemctl enable --now sauvegarde.timer
-    # La PREMIÈRE sauvegarde est lancée à la toute fin de main(), une fois tout
-    # configuré, pour qu'elle contienne déjà le durcissement SSH, le pare-feu, etc.
 }
 
 premiere_sauvegarde() {
@@ -190,8 +157,6 @@ configurer_parefeu() {
     copier systemd/nftables.service.d/projet.conf /etc/systemd/system/nftables.service.d/projet.conf 0644
     systemctl daemon-reload
     systemctl enable nftables
-    # reload (et non restart) : recharge nos règles sans toucher à celles de
-    # fail2ban. Les connexions SSH établies restent autorisées.
     if systemctl is-active --quiet nftables; then
         systemctl reload nftables
     else
@@ -214,7 +179,6 @@ configurer_mises_a_jour() {
     systemctl enable --now apt-daily.timer apt-daily-upgrade.timer
 }
 
-# Vrai si au moins un administrateur pourra se connecter par clé
 cle_admin_installee() {
     local compte maison
     for compte in $(membres_groupe admins); do
@@ -227,8 +191,6 @@ cle_admin_installee() {
 
 configurer_ssh() {
     etape "S1 à S5 : durcissement SSH"
-    # Piège classique : passer en « clé uniquement » sans clé installée =
-    # plus aucun accès SSH. On refuse, sauf demande explicite.
     if ! cle_admin_installee && [[ $FORCER_SSH -eq 0 ]]; then
         alerte "aucun administrateur n'a de clé SSH installée (config/cles/<login>.pub)"
         alerte "durcissement SSH NON appliqué ; ajoutez les clés puis relancez (ou --forcer-ssh)"
@@ -242,7 +204,6 @@ configurer_ssh() {
         cp -p "$cible" "$sauvegarde"
     fi
     copier ssh/sshd_config.d/01-durcissement.conf "$cible" 0644
-    # S5 : on valide la configuration AVANT de recharger le service
     if sshd -t; then
         systemctl reload ssh
         info "configuration SSH validée (sshd -t) et rechargée"
@@ -259,9 +220,6 @@ configurer_ssh() {
     fi
 }
 
-# C4 : root verrouillé, en DERNIER, et seulement si un administrateur peut
-# encore prendre la main (mot de passe défini + sudo valide). Sinon on se
-# retrouverait sans aucun accès administrateur, même en console.
 verrouiller_root() {
     etape "C4 : verrouillage du compte root"
     local compte possible=0
