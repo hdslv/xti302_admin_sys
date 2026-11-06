@@ -1,0 +1,22 @@
+# Projet XTI302-CYB — exigence C3
+# Copié par installer.sh dans /etc/sudoers.d/projet (0440 root:root),
+# après validation par « visudo -cf ».
+
+# Chaque commande lancée avec sudo est journalisée, dans un pseudo-terminal
+# séparé (un programme lancé via sudo ne peut pas injecter de frappes dans
+# le terminal de l'utilisateur).
+Defaults        use_pty
+Defaults        logfile="/var/log/sudo.log"
+
+# Administrateurs nominatifs : tous les droits, après saisie de LEUR propre
+# mot de passe. Chaque action d'administration est donc imputable à une
+# personne (pas de compte root partagé).
+%admins         ALL=(ALL:ALL) ALL
+
+# Compte support : UNIQUEMENT ce script, en root.
+#  - NOPASSWD : support se connecte par clé et n'a pas de mot de passe ;
+#  - le script appartient à root et n'est modifiable que par lui (0755) :
+#    sinon support pourrait y écrire n'importe quelle commande et la lancer
+#    en root ;
+#  - le script valide strictement ses arguments (seuil et période).
+support         ALL=(root) NOPASSWD: /usr/local/sbin/analyse_logs.sh
