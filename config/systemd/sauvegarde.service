@@ -1,0 +1,14 @@
+# Projet XTI302-CYB — exigence B2 : exécution de la sauvegarde
+# Copié par installer.sh dans /etc/systemd/system/sauvegarde.service
+# Déclenché par sauvegarde.timer. Les messages du script vont dans le
+# journal (journalctl -u sauvegarde.service) et dans /var/log/sauvegarde.log.
+[Unit]
+Description=Sauvegarde incrementale versionnee de /srv et /etc
+RequiresMountsFor=/sauvegardes
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/sauvegarde.sh
+# La sauvegarde passe après les autres programmes (processeur et disque)
+Nice=10
+IOSchedulingClass=idle
