@@ -1,0 +1,10 @@
+// Projet XTI302-CYB — exigence D1 : mises à jour de sécurité automatiques
+// Copié par installer.sh dans /etc/apt/apt.conf.d/20auto-upgrades
+//
+// Chaque jour (timers apt-daily et apt-daily-upgrade) : mise à jour de la
+// liste des paquets, puis installation automatique par unattended-upgrades.
+// Les dépôts concernés sont ceux de /etc/apt/apt.conf.d/50unattended-upgrades
+// (par défaut sous Debian : les mises à jour de sécurité « Debian-Security »).
+APT::Periodic::Update-Package-Lists "1";
+APT::Periodic::Unattended-Upgrade "1";
+APT::Periodic::AutocleanInterval "7";
