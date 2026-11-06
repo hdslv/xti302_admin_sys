@@ -1,0 +1,16 @@
+# Aucune clé privée ni aucun mot de passe dans le dépôt
+id_rsa
+id_ecdsa
+id_ed25519
+projet_support
+*.key
+*.pem
+*.ppk
+config/cles/*
+!config/cles/*.pub
+!config/cles/LISEZMOI.md
+
+# Scripts d aide de deploiement (locaux, non livrables)
+*.ps1
+# Resultats regenerables
+resultats/
