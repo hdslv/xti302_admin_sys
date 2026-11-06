@@ -14,3 +14,6 @@ config/cles/*
 *.ps1
 # Resultats regenerables
 resultats/
+
+# Archives
+*.zip

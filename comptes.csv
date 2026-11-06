@@ -1,0 +1,13 @@
+login;nom;groupe_principal;groupes_secondaires
+hugo;Hugo;admins;acces_ssh
+ilyes;Ilyes;admins;acces_ssh
+camille;Camille;admins;acces_ssh
+support;Compte support;support;acces_ssh
+pmartin;Paul Martin;comptables;
+clefevre;Claire Lefèvre;comptables;
+sbernard;Sophie Bernard;rh;
+tmoreau;Thomas Moreau;rh;
+jdurand;Jean Durand;direction;
+mpetit;Marie Petit;direction;
+lroux;Léa Roux;stagiaire;
+ngarcia;Nathan Garcia;stagiaire;
